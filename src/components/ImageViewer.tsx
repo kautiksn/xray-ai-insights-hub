@@ -8,12 +8,14 @@ interface ImageViewerProps {
   images: string[];
   currentIndex: number;
   onChangeImage: (index: number) => void;
+  totalImages?: number;
 }
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
   images,
   currentIndex,
   onChangeImage,
+  totalImages = 20
 }) => {
   const [zoomLevel, setZoomLevel] = useState(1);
 
@@ -24,7 +26,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   };
 
   const handleNextImage = () => {
-    if (currentIndex < images.length - 1) {
+    if (currentIndex < totalImages - 1) {
       onChangeImage(currentIndex + 1);
     }
   };
@@ -108,15 +110,15 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         </button>
         
         <span className="text-sm text-center">
-          {currentIndex + 1} / {images.length}
+          {currentIndex + 1} / {totalImages}
         </span>
         
         <button
           onClick={handleNextImage}
-          disabled={currentIndex === images.length - 1}
+          disabled={currentIndex === totalImages - 1}
           className={cn(
             "p-1.5 rounded-md nav-button",
-            currentIndex === images.length - 1 && "opacity-50 cursor-not-allowed"
+            currentIndex === totalImages - 1 && "opacity-50 cursor-not-allowed"
           )}
           aria-label="Next image"
         >
