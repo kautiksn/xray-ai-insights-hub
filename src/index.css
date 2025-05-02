@@ -1,4 +1,3 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -53,6 +52,15 @@
 
   body {
     @apply bg-medical-darkest-gray text-foreground;
+    height: 100vh;
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  select {
+    background: transparent;
+    text-align: center;
   }
 
   /* Custom scrollbar for report panels */
@@ -76,5 +84,9 @@
   /* Score circle styling */
   .score-circle {
     @apply flex items-center justify-center rounded-full w-10 h-10 text-white font-bold text-sm;
+  }
+
+  #root {
+    height: 100%;
   }
 }
