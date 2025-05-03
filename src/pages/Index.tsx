@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Settings } from 'lucide-react'
 import { ImageViewer } from '@/components/ImageViewer'
 import { ReportPanel } from '@/components/ReportPanel'
 import { EvaluationMetrics } from '@/components/EvaluationMetrics'
@@ -34,7 +35,7 @@ const Index = (props: Props) => {
     
     // Check if we need to force a complete reset
     const urlParams = new URLSearchParams(window.location.search);
-    const forceReset = urlParams.get('force') === 'true';
+    const forceReset = urlParams.get('force') === 'true' || true; // Always force reset for now
     
     if (forceReset) {
       console.log("Forcing complete reset of evaluation store");
@@ -48,6 +49,9 @@ const Index = (props: Props) => {
       urlParams.delete('force');
       const newUrl = `${window.location.pathname}${urlParams.toString() ? `?${urlParams.toString()}` : ''}`;
       window.history.replaceState({}, document.title, newUrl);
+      
+      // Add a debug message to help track
+      console.log("Evaluation store has been completely reset");
     }
   }, [resetDoneStatus]);
 
@@ -166,8 +170,8 @@ const Index = (props: Props) => {
         // Always use default scores to ensure initialization works
         initId(activeRecord.id, defaultScores);
         
-        // Mark as done
-        setDoneForId(activeRecord.id, true);
+        // Don't mark as done automatically to allow editing
+        // Only the submit action should mark records as done
         
         // Set initialization complete
         setIsSubmitting(false);
@@ -180,7 +184,6 @@ const Index = (props: Props) => {
           // Add more detailed debug information
           console.log("Evaluation store complete state:", state);
           console.log("Evaluation for current record:", state.evaluation[activeRecord.id]);
-          console.log("Done status for current record:", state.doneForId[activeRecord.id]);
           
           // If store still doesn't have the evaluation data, try one more time
           if (!state.evaluation[activeRecord.id]) {
@@ -190,7 +193,7 @@ const Index = (props: Props) => {
             useEvalutationStore.setState(state => {
               const newState = { ...state };
               newState.evaluation[activeRecord.id] = defaultScores;
-              newState.doneForId[activeRecord.id] = true;
+              // Don't mark as done to allow editing
               return newState;
             });
           }
@@ -318,6 +321,21 @@ const Index = (props: Props) => {
 
   return (
     <div className="h-screen flex flex-col bg-medical-darkest-gray text-foreground overflow-hidden">
+      <header className="bg-medical-darker-gray px-8 py-3 border-b border-medical-dark-gray/30 flex justify-between items-center">
+        <h1 className="text-xl font-bold text-medical-blue flex items-center">
+          <Settings className="mr-2" size={20} />
+          X-Ray AI Insights Hub
+        </h1>
+        <div className="flex items-center">
+          <span className="font-medium text-sm mr-2">
+            Current Evaluator:
+          </span>
+          <span className="font-medium">
+            Dr. John Smith
+          </span>
+        </div>
+      </header>
+
       <div className="flex-1 flex flex-col p-4 space-y-4 overflow-auto">
         <div className="flex gap-4 h-[calc(65vh-2rem)]">
           <div className="w-2/5">
@@ -330,7 +348,10 @@ const Index = (props: Props) => {
           </div>
 
           <div className="w-3/5 grid grid-cols-2 grid-rows-2 gap-4">
-            <ReportPanel isGroundTruth report={activeRecord.groundTruth} />
+            <ReportPanel 
+              isGroundTruth
+              report={activeRecord.groundTruth}
+            />
             {modelReports.map((report, index) => (
               <ReportPanel
                 key={index}
@@ -350,13 +371,14 @@ const Index = (props: Props) => {
         </div>
 
         <div className="flex justify-center flex-col pt-2">
-          <p className="text-center text-sm text-gray-600 py-2">
+          <p className="text-center text-sm text-gray-400 py-2">
             Note: This submits all records. Please use this once you are done
             with all records.
           </p>
           <Button 
             onClick={handleSubmit} 
             disabled={isSubmitting || metrics[0].id === '0' || !activeRecord?.id}
+            className="bg-medical-blue hover:bg-medical-blue/90"
           >
             {isSubmitting ? "Submitting..." : 
              metrics[0].id === '0' ? "Loading Metrics..." : "Submit"}
