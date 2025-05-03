@@ -5,6 +5,6 @@ export type EvaluationMetric = {
 }
 
 export type Evaluation = {
-  modelId: string
+  responseId: string
   metrics: EvaluationMetric[]
 }

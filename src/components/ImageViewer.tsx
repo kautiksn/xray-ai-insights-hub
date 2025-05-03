@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft,
   ChevronRight,
@@ -14,6 +15,14 @@ interface ImageViewerProps {
   currentIndex: number
   onChangeImage: (index: number) => void
   totalImages?: number
+  navigation?: {
+    allCaseIds: string[]
+    currentIndex: number
+    hasPrevious: boolean
+    hasNext: boolean
+    previousId: string | null
+    nextId: string | null
+  }
 }
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
@@ -21,17 +30,33 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   currentIndex,
   onChangeImage,
   totalImages = 20,
+  navigation
 }) => {
   const [zoomLevel, setZoomLevel] = useState(1)
+  const navigate = useNavigate()
 
   const handlePreviousImage = () => {
-    if (currentIndex > 0) {
+    if (navigation && navigation.hasPrevious && navigation.previousId) {
+      // Get the current URL and update only the radId part
+      const url = new URL(window.location.href)
+      const path = url.pathname.split('/')
+      path[path.length - 1] = navigation.previousId
+      url.pathname = path.join('/')
+      navigate(url.pathname + url.search)
+    } else if (currentIndex > 0) {
       onChangeImage(currentIndex - 1)
     }
   }
 
   const handleNextImage = () => {
-    if (currentIndex < totalImages - 1) {
+    if (navigation && navigation.hasNext && navigation.nextId) {
+      // Get the current URL and update only the radId part
+      const url = new URL(window.location.href)
+      const path = url.pathname.split('/')
+      path[path.length - 1] = navigation.nextId
+      url.pathname = path.join('/')
+      navigate(url.pathname + url.search)
+    } else if (currentIndex < totalImages - 1) {
       onChangeImage(currentIndex + 1)
     }
   }
@@ -102,10 +127,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
       <div className="p-3 border-t border-medical-dark-gray/30 flex justify-between items-center">
         <button
           onClick={handlePreviousImage}
-          disabled={currentIndex === 0}
+          disabled={navigation ? !navigation.hasPrevious : currentIndex === 0}
           className={cn(
             'p-1.5 rounded-md nav-button',
-            currentIndex === 0 && 'opacity-50 cursor-not-allowed'
+            (navigation ? !navigation.hasPrevious : currentIndex === 0) && 'opacity-50 cursor-not-allowed'
           )}
           aria-label="Previous image"
         >
@@ -113,15 +138,15 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         </button>
 
         <span className="text-sm text-center">
-          {currentIndex + 1} / {totalImages}
+          {navigation ? `${navigation.currentIndex + 1} / ${navigation.allCaseIds.length}` : `${currentIndex + 1} / ${totalImages}`}
         </span>
 
         <button
           onClick={handleNextImage}
-          disabled={currentIndex === totalImages - 1}
+          disabled={navigation ? !navigation.hasNext : currentIndex === totalImages - 1}
           className={cn(
             'p-1.5 rounded-md nav-button',
-            currentIndex === totalImages - 1 && 'opacity-50 cursor-not-allowed'
+            (navigation ? !navigation.hasNext : currentIndex === totalImages - 1) && 'opacity-50 cursor-not-allowed'
           )}
           aria-label="Next image"
         >

@@ -118,17 +118,20 @@ const Index = (props: Props) => {
   const modelReports = activeRecord ? shuffle([...activeRecord.modelOutputs]) : []
   console.log("Model reports:", modelReports.length);
   
+  // Get navigation data if available
+  const navigation = activeRecord.navigation || null;
+
   console.log("Current metrics state:", metrics);
   console.log("Current active record evaluations:", activeRecord ? activeRecord.evaluations : "none");
   
-  const modelScores = activeRecord ? addEmptyMetrics(activeRecord.evaluations, metrics).sort(
-    (a, b) => {
-      const aIndex = modelReports.findIndex((x) => x.modelId === a.modelId)
-      const bIndex = modelReports.findIndex((x) => x.modelId === b.modelId)
-
-      return aIndex - bIndex
-    }
-  ) : []
+  const modelScores = activeRecord ? activeRecord.evaluations.map(evaluation => ({
+    responseId: evaluation.responseId,
+    metrics: [{
+      id: evaluation.metric,
+      label: metrics.find(m => m.id === evaluation.metric)?.label || '',
+      value: evaluation.score
+    }]
+  })) : [];
   
   console.log("Calculated model scores:", modelScores);
 
@@ -145,16 +148,14 @@ const Index = (props: Props) => {
         const defaultScores = activeRecord.modelOutputs.map(output => {
           // Find any existing evaluations for this model
           const existingModelEval = activeRecord.evaluations.find(
-            evaluation => evaluation.modelId === output.modelId
+            evaluation => evaluation.responseId === output.responseId
           );
           
           return {
-            modelId: output.modelId,
+            responseId: output.responseId,
             metrics: metrics.map(metric => {
               // Check if we have an existing value for this metric
-              const existingValue = existingModelEval?.metrics.find(
-                m => m.id === metric.id
-              )?.value || 0;
+              const existingValue = existingModelEval?.metric === metric.id ? existingModelEval.score : 0;
               
               return {
                 id: metric.id,
@@ -344,6 +345,7 @@ const Index = (props: Props) => {
               currentIndex={currentImageIndex}
               onChangeImage={handleImageChange}
               totalImages={records.length}
+              navigation={navigation}
             />
           </div>
 
@@ -367,6 +369,11 @@ const Index = (props: Props) => {
             activeRecordId={activeRecord.id || ''}
             metrics={metrics}
             isSubmitting={isSubmitting}
+            modelResponses={modelReports.map((report, index) => ({
+              id: report.responseId,
+              model_name: `Model ${index + 1}`,
+              response: report
+            }))}
           />
         </div>
 

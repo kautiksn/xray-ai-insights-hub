@@ -4,9 +4,46 @@ import useEvalutationStore from '@/stores/evaluation'
 
 const instance = axios.create({
   baseURL: '/api/', // Use the proxied URL instead of direct backend URL
-  timeout: 5000,
+  timeout: 30000, // Increased timeout to 30 seconds
   // headers: { 'X-Custom-Header': 'foobar' },
 })
+
+// Cache for metrics and models data
+let metricsCache = null;
+let modelsCache = null;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+let lastMetricsFetch = 0;
+let lastModelsFetch = 0;
+
+// Function to get metrics with caching
+async function getCachedMetrics() {
+  const now = Date.now();
+  if (metricsCache && (now - lastMetricsFetch) < CACHE_DURATION) {
+    console.log('Using cached metrics data');
+    return metricsCache;
+  }
+
+  console.log('Fetching fresh metrics data');
+  const response = await instance.get('metrics/');
+  metricsCache = response.data;
+  lastMetricsFetch = now;
+  return metricsCache;
+}
+
+// Function to get models with caching
+async function getCachedModels() {
+  const now = Date.now();
+  if (modelsCache && (now - lastModelsFetch) < CACHE_DURATION) {
+    console.log('Using cached models data');
+    return modelsCache;
+  }
+
+  console.log('Fetching fresh models data');
+  const response = await instance.get('models/');
+  modelsCache = response.data;
+  lastModelsFetch = now;
+  return modelsCache;
+}
 
 // Function to test the API connectivity
 async function testBackendConnection(): Promise<boolean> {
@@ -136,112 +173,192 @@ async function getEvaluatorCases(evaluatorId: string): Promise<any[]> {
   }
 }
 
-async function getRecords(radId: string): Promise<{ data: Record[] }> {
+// Types for evaluator cases response
+interface CaseWithDetails {
+  id: string;
+  image_id: string;
+  image_url: string;
+  status: string;
+  completed_evaluations: number;
+  total_evaluations: number;
+  last_updated: string;
+}
+
+interface CasesResponse {
+  cases: CaseWithDetails[];
+  total_cases: number;
+  pending_cases: number;
+  in_progress_cases: number;
+  completed_cases: number;
+}
+
+// New optimized function to get all cases assigned to a specific evaluator with full details
+async function getEvaluatorCasesWithDetails(evaluatorId: string): Promise<CasesResponse> {
   try {
-    console.log('Fetching records for radId:', radId);
+    console.time('fetchEvaluatorCases');
+    // Get cases assigned to this evaluator with all related data
+    const response = await instance.get(`users/${evaluatorId}/cases_with_details/`);
+    console.timeEnd('fetchEvaluatorCases');
     
-    // Get case details using the case ID (radId)
-    const caseResponse = await instance.get(`cases/${radId}/details/`);
-    const caseData = caseResponse.data;
-    console.log('Case data fetched:', caseData.case.id);
+    console.log('Evaluator cases data:', response.data);
+
+    // Transform the response to match our interface if needed
+    const casesData = response.data;
     
-    // Ensure model_responses exists and is an array
-    if (!caseData.model_responses || !Array.isArray(caseData.model_responses)) {
-      console.warn('No model responses found in case data, creating empty structure');
-      caseData.model_responses = [];
+    // If the response is already in the correct format, return it directly
+    if (casesData.cases && Array.isArray(casesData.cases)) {
+      return casesData as CasesResponse;
     }
-    
-    // Log model responses
-    console.log('Model responses count:', caseData.model_responses.length);
-    
-    // Get available metrics
-    const metricsResponse = await instance.get('metrics/');
-    const metrics = metricsResponse.data;
-    console.log('Metrics count:', metrics.length);
-    
-    // Get models info
-    const modelsResponse = await instance.get('models/');
-    const models = modelsResponse.data;
-    console.log('Models count:', models.length);
-    
-    // Ensure there are model responses, create dummy ones if empty
-    if (caseData.model_responses.length === 0 && models.length > 0) {
-      console.log('Creating dummy model responses for new user');
-      // Create dummy model responses based on available models
-      caseData.model_responses = models.map(model => ({
-        id: `dummy-${model.id}`,
-        model: model.id,
-        findings: "",
-        impression: "",
-        evaluations: []
-      }));
-    }
-    
-    // Transform Django API response to match our frontend Record type
-    const recordData: Record = {
-      id: caseData.case.id,
-      imageUrl: caseData.case.image_url,
-      modelOutputs: caseData.model_responses.map((response: any) => ({
-        modelId: response.model,
-        findings: response.findings || "",
-        impressions: response.impression || "",
+
+    // If we need to transform the data
+    return {
+      cases: (casesData.cases || []).map((caseItem: any) => ({
+        id: caseItem.id,
+        image_id: caseItem.image_id,
+        image_url: caseItem.image_url,
+        status: caseItem.status || 'pending',
+        completed_evaluations: caseItem.completed_evaluations || 0,
+        total_evaluations: caseItem.total_evaluations || 0,
+        last_updated: caseItem.updated_at || caseItem.created_at
       })),
-      groundTruth: {
-        findings: caseData.case.ground_truth?.findings || "",
-        impressions: caseData.case.ground_truth?.impression || "",
-      },
-      metrics: metrics.map((metric: any) => ({
-        id: metric.id,
-        label: metric.name,
-      })),
-      models: models.map((model: any) => ({
-        id: model.id,
-        label: model.name,
-      })),
-      evaluations: caseData.model_responses.map((response: any) => {
-        // If there are existing evaluations for this model response, include them
-        // This assumes the API returns evaluations with the model_responses
-        return {
-          modelId: response.model,
-          metrics: metrics.map((metric: any) => {
-            const existingEvaluation = response.evaluations?.find(
-              (evaluation: any) => evaluation.metric === metric.id
-            );
-            
-            return {
-              id: metric.id,
-              label: metric.name,
-              value: existingEvaluation ? existingEvaluation.score : 0,
-            };
-          }),
-        };
-      }),
+      total_cases: casesData.total_cases || 0,
+      pending_cases: casesData.pending_cases || 0,
+      in_progress_cases: casesData.in_progress_cases || 0,
+      completed_cases: casesData.completed_cases || 0
     };
+  } catch (error) {
+    console.error('Error fetching evaluator cases:', error);
+    if (error.response) {
+      console.error('Response data:', error.response.data);
+      console.error('Response status:', error.response.status);
+      if (error.response.status === 504) {
+        throw new Error('Request timeout - the server took too long to respond. Please try again.');
+      }
+    }
+    throw error;
+  }
+}
+
+async function getRecords(id: string): Promise<{ data: Record[] }> {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const doctorId = urlParams.get('doctorId');
+    const isCaseId = !doctorId || id !== doctorId;
+
+    console.log('Fetching records:', isCaseId ? `case ${id}` : `doctor ${id}`);
     
-    // Ensure modelOutputs always has at least one entry for a new user
-    if (!recordData.modelOutputs || recordData.modelOutputs.length === 0) {
-      console.warn('Model outputs still empty after processing, adding fallback model outputs');
-      recordData.modelOutputs = [
-        { modelId: "fallback_model1", findings: "", impressions: "" },
-        { modelId: "fallback_model2", findings: "", impressions: "" }
-      ];
-      
-      // Also update evaluations to match
-      recordData.evaluations = recordData.modelOutputs.map(output => ({
-        modelId: output.modelId,
-        metrics: metrics.map(metric => ({
+    if (isCaseId) {
+      console.time('fetchData');
+      // Use a single optimized endpoint that returns all necessary data
+      const response = await instance.get(`cases/${id}/full_details/`, {
+        params: {
+          evaluator_id: doctorId // Pass the evaluator ID to get relevant assignments
+        }
+      });
+      console.timeEnd('fetchData');
+
+      const data = response.data;
+      console.log('Full case data fetched:', data);
+
+      if (!data || !data.case || !data.case.image_url) {
+        console.error('Invalid case data structure:', data);
+        throw new Error('Invalid case data structure received from server');
+      }
+
+      // Parse ground truth from JSON string
+      let groundTruth = { findings: '', impressions: '' };
+      try {
+        if (data.case.ground_truth) {
+          const parsedGroundTruth = JSON.parse(data.case.ground_truth);
+          groundTruth = {
+            findings: parsedGroundTruth.findings || '',
+            impressions: parsedGroundTruth.impression || ''
+          };
+        }
+      } catch (err) {
+        console.error('Error parsing ground truth:', err);
+      }
+
+      // Transform the case into a Record
+      const recordData: Record = {
+        id: data.case.id,
+        imageUrl: data.case.image_url,
+        modelOutputs: (data.model_responses || []).map((response: any) => ({
+          responseId: response.id,
+          response: response.response_text || response.response || '' // Handle both response_text and response fields
+        })),
+        metrics: (data.metrics || []).map((metric: any) => ({
           id: metric.id,
           label: metric.name,
-          value: 0
-        }))
-      }));
+        })),
+        evaluations: (data.model_responses || []).map((response: any) => ({
+          responseId: response.id,
+          metric: response.metric || '',
+          score: response.score || 0,
+        })),
+        groundTruth,
+        models: []
+      };
+
+      console.log('Transformed record data:', recordData);
+      return { data: [recordData] };
+    } else {
+      // Get cases assigned to this evaluator
+      const casesResponse = await instance.get(`users/${id}/cases/`);
+      const casesData = casesResponse.data;
+      console.log('Cases data fetched:', casesData.length, 'cases');
+      
+      // Transform the cases into Records
+      const records: Record[] = casesData.map((caseItem: any) => {
+        // Parse the ground truth JSON if it exists
+        let groundTruth = { findings: '', impressions: '' };
+        try {
+          if (caseItem.ground_truth) {
+            const parsedGroundTruth = JSON.parse(caseItem.ground_truth);
+            groundTruth = {
+              findings: parsedGroundTruth.findings || '',
+              impressions: parsedGroundTruth.impression || ''
+            };
+          }
+        } catch (err) {
+          console.error('Error parsing ground truth:', err);
+        }
+        
+        // Create the record object with safe fallbacks
+        const recordData: Record = {
+          id: caseItem.id,
+          imageUrl: caseItem.image_url,
+          modelOutputs: (caseItem.model_responses || []).map((response: any) => ({
+            responseId: response.id,
+            response: response.response_text || response.response || '' // Handle both response_text and response fields
+          })),
+          metrics: (caseItem.metrics || []).map((metric: any) => ({
+            id: metric.id,
+            label: metric.name,
+          })),
+          evaluations: (caseItem.model_responses || []).map((response: any) => ({
+            responseId: response.id,
+            metric: response.metric || '',
+            score: response.score || 0,
+          })),
+          groundTruth,
+          models: []
+        };
+        
+        return recordData;
+      });
+      
+      return { data: records };
     }
-    
-    console.log('Processed record data with model outputs:', recordData.modelOutputs.length);
-    
-    return { data: [recordData] };
   } catch (error) {
     console.error('Error fetching records:', error);
+    if (error.response) {
+      console.error('Response data:', error.response.data);
+      console.error('Response status:', error.response.status);
+      if (error.response.status === 504) {
+        throw new Error('Request timeout - the server took too long to respond. Please try again.');
+      }
+    }
     throw error;
   }
 }
@@ -306,7 +423,7 @@ async function setRecords(radId: string) {
       
       // For each model's evaluations
       for (const modelEval of evaluations) {
-        const modelId = modelEval.modelId;
+        const modelId = modelEval.responseId;
         const modelResponseObject = modelResponses.find((resp: any) => resp.model === modelId);
         const modelResponseId = modelResponseObject?.id;
         
@@ -466,7 +583,8 @@ async function getMetrics(): Promise<any[]> {
 export { 
   getRecords, 
   setRecords, 
-  getEvaluatorCases, 
+  getEvaluatorCases,
+  getEvaluatorCasesWithDetails,
   testBackendConnection, 
   getAllEvaluators,
   getAllEvaluations,

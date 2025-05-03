@@ -39,10 +39,10 @@ export function addEmptyMetrics(
 
   const newEvaluations = []
   evaluations.forEach((evaluation) => {
-    const { metrics, modelId } = evaluation
+    const { metrics, responseId } = evaluation
 
     const newObj: Evaluation = {
-      modelId,
+      responseId,
       metrics: [],
     }
 

@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { Report } from '@/types/Record'
 
 interface ReportPanelProps {
-  report: Report
+  report: Report | { responseId: string; response: string }
   className?: string
   isGroundTruth?: boolean
   title?: string
@@ -15,6 +15,9 @@ export const ReportPanel: React.FC<ReportPanelProps> = ({
   isGroundTruth,
   title,
 }) => {
+  // Check if report is ground truth or model output
+  const isModelOutput = 'response' in report;
+
   return (
     <div
       className={cn(
@@ -37,19 +40,30 @@ export const ReportPanel: React.FC<ReportPanelProps> = ({
       </div>
 
       <div className="flex-1 p-4 overflow-y-auto report-panel space-y-4">
-        <div>
-          <h3 className="text-sm font-medium text-medical-gray uppercase mb-1">
-            FINDINGS:
-          </h3>
-          <p className="text-sm">{report.findings}</p>
-        </div>
+        {isModelOutput ? (
+          <div>
+            <h3 className="text-sm font-medium text-medical-gray uppercase mb-1">
+              RESPONSE:
+            </h3>
+            <p className="text-sm">{(report as { response: string }).response}</p>
+          </div>
+        ) : (
+          <>
+            <div>
+              <h3 className="text-sm font-medium text-medical-gray uppercase mb-1">
+                FINDINGS:
+              </h3>
+              <p className="text-sm">{(report as Report).findings}</p>
+            </div>
 
-        <div>
-          <h3 className="text-sm font-medium text-medical-gray uppercase mb-1">
-            IMPRESSION:
-          </h3>
-          <p className="text-sm">{report.impressions}</p>
-        </div>
+            <div>
+              <h3 className="text-sm font-medium text-medical-gray uppercase mb-1">
+                IMPRESSION:
+              </h3>
+              <p className="text-sm">{(report as Report).impressions}</p>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

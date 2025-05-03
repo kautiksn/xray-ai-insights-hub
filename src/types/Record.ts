@@ -7,14 +7,32 @@ export type Report = {
   impressions: string
 }
 
+export type Navigation = {
+  allCaseIds: string[]
+  currentIndex: number
+  hasPrevious: boolean
+  hasNext: boolean
+  previousId: string | null
+  nextId: string | null
+}
+
 export type Record = {
   id?: string
   imageUrl: string
-  modelOutputs: ({
-    modelId: string
-  } & Report)[]
+  modelOutputs: {
+    responseId: string
+    response: string
+  }[]
   groundTruth: Report
-  metrics: Metric[]
+  metrics: {
+    id: string
+    label: string
+  }[]
   models: Model[]
-  evaluations: Evaluation[]
+  evaluations: {
+    responseId: string
+    metric: string
+    score: number
+  }[]
+  navigation?: Navigation
 }

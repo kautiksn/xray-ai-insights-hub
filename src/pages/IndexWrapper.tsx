@@ -3,12 +3,15 @@ import { useParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import Index from './Index'
 import { getUserDetails } from '@/services'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { AlertCircle } from 'lucide-react'
 
 function IndexWrapper() {
   const { radId } = useParams()
   const records = useRecords(radId)
   const [doctorInfo, setDoctorInfo] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
 
   // Extract doctor ID from URL
   // URL format is typically /rad/:radId?doctorId=xxx
@@ -23,7 +26,6 @@ function IndexWrapper() {
         if (!doctorId) {
           console.log('No doctorId found in URL')
           setDoctorInfo({ name: 'Anonymous Evaluator' })
-          setLoading(false)
           return
         }
         
@@ -51,6 +53,7 @@ function IndexWrapper() {
           name: doctorId ? `Doctor ${doctorId.substring(0, 8)}` : 'Unknown Evaluator',
           role: 'Evaluator' 
         });
+        setError('Error loading doctor information')
       } finally {
         setLoading(false)
       }
@@ -59,24 +62,44 @@ function IndexWrapper() {
     getDoctorInfo()
   }, [])
 
-  if (loading) {
+  // Show loading state while fetching records or doctor info
+  if (loading || !records) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-medical-darkest-gray text-foreground">
-        <p>Loading...</p>
+        <div className="animate-pulse">
+          <p className="text-lg">Loading case details...</p>
+        </div>
       </div>
     )
   }
 
-  if (!records || records?.length === 0) {
+  // Show error state if no records found
+  if (records?.length === 0) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-medical-darkest-gray text-foreground">
-        <p>No records found</p>
+        <Alert variant="destructive" className="max-w-md">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            No case details found. This could be because:
+            <ul className="list-disc list-inside mt-2">
+              <li>The case ID is invalid</li>
+              <li>You don't have permission to view this case</li>
+              <li>The case has been removed</li>
+            </ul>
+          </AlertDescription>
+        </Alert>
       </div>
     )
   }
 
   return (
     <div>
+      {error && (
+        <Alert variant="destructive" className="m-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       {doctorInfo && (
         <div className="bg-medical-dark-gray/50 p-3 text-center text-white">
           <p className="text-lg">

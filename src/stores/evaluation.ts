@@ -10,7 +10,7 @@ type EvaluationStore = {
   setEvaluation: (
     idx: string,
     payload: {
-      modelId: string
+      responseId: string
       metricId: string
       value: number
     }
@@ -42,12 +42,12 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
       const target = [...targetEvaluation]
 
       const targetModelIndex = target.findIndex(
-        (x) => x.modelId === payload.modelId
+        (x) => x.responseId === payload.responseId
       )
       
       // Guard against model not found
       if (targetModelIndex === -1) {
-        console.error(`Model ${payload.modelId} not found in evaluation`);
+        console.error(`Response ${payload.responseId} not found in evaluation`);
         return state;
       }
       
@@ -59,7 +59,7 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
       
       // Guard against metric not found
       if (targetMetricIndex === -1) {
-        console.error(`Metric ${payload.metricId} not found in model ${payload.modelId}`);
+        console.error(`Metric ${payload.metricId} not found in model ${payload.responseId}`);
         return state;
       }
       
