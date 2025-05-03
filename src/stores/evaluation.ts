@@ -21,28 +21,48 @@ type EvaluationStore = {
     [idx: string]: boolean
   }
   setDoneForId: (idx: string, status: boolean) => void
+  resetDoneStatus: () => void
 }
 
+// Create store without persistence - no localStorage
 const useEvalutationStore = create<EvaluationStore>()((set) => ({
   evaluation: {},
   setEvaluation: (idx, payload) =>
     set((state) => {
-      // return {
-      //   ...state,
-      // }
       const newState = { ...state }
       const newEvaluation = { ...newState.evaluation }
       const targetEvaluation = newEvaluation[idx]
+      
+      // Guard against targetEvaluation being undefined
+      if (!targetEvaluation) {
+        console.error(`Evaluation data for id ${idx} not found`);
+        return state;
+      }
+      
       const target = [...targetEvaluation]
 
       const targetModelIndex = target.findIndex(
         (x) => x.modelId === payload.modelId
       )
+      
+      // Guard against model not found
+      if (targetModelIndex === -1) {
+        console.error(`Model ${payload.modelId} not found in evaluation`);
+        return state;
+      }
+      
       const targetModel = { ...target[targetModelIndex] }
 
       const targetMetricIndex = targetModel.metrics.findIndex(
         (x) => x.id === payload.metricId
       )
+      
+      // Guard against metric not found
+      if (targetMetricIndex === -1) {
+        console.error(`Metric ${payload.metricId} not found in model ${payload.modelId}`);
+        return state;
+      }
+      
       const newMetrics = [...targetModel.metrics]
       const targetMetric = newMetrics[targetMetricIndex]
 
@@ -67,6 +87,7 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
     })),
   initAtId: (idx, payload) =>
     set((state) => {
+      console.log(`Initializing evaluations for ${idx} with:`, payload);
       const newState = { ...state }
       newState.evaluation[idx] = [...payload]
       return newState
@@ -78,6 +99,11 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
       newState.doneForId[idx] = status
       return newState
     }),
+  resetDoneStatus: () =>
+    set((state) => ({
+      ...state,
+      doneForId: {}
+    }))
 }))
 
 export default useEvalutationStore
