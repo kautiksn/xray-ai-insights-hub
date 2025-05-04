@@ -19,11 +19,9 @@ let lastModelsFetch = 0;
 async function getCachedMetrics() {
   const now = Date.now();
   if (metricsCache && (now - lastMetricsFetch) < CACHE_DURATION) {
-    console.log('Using cached metrics data');
     return metricsCache;
   }
 
-  console.log('Fetching fresh metrics data');
   const response = await instance.get('metrics/');
   metricsCache = response.data;
   lastMetricsFetch = now;
@@ -34,11 +32,9 @@ async function getCachedMetrics() {
 async function getCachedModels() {
   const now = Date.now();
   if (modelsCache && (now - lastModelsFetch) < CACHE_DURATION) {
-    console.log('Using cached models data');
     return modelsCache;
   }
 
-  console.log('Fetching fresh models data');
   const response = await instance.get('models/');
   modelsCache = response.data;
   lastModelsFetch = now;
@@ -48,9 +44,7 @@ async function getCachedModels() {
 // Function to test the API connectivity
 async function testBackendConnection(): Promise<boolean> {
   try {
-    // Try to fetch a simple endpoint to check if the backend is responsive
     await instance.get('models/');
-    console.log('✅ Backend connection successful');
     return true;
   } catch (error) {
     console.error('❌ Backend connection failed:', error);
@@ -152,10 +146,7 @@ async function getAllCases(): Promise<any[]> {
 // New function to get all cases assigned to a specific evaluator (doctor)
 async function getEvaluatorCases(evaluatorId: string): Promise<any[]> {
   try {
-    // Get cases assigned to this evaluator
     const response = await instance.get(`users/${evaluatorId}/cases/`);
-    
-    // Return the list of cases
     return response.data;
   } catch (error) {
     console.error('Error fetching evaluator cases:', error);
@@ -185,22 +176,13 @@ interface CasesResponse {
 // New optimized function to get all cases assigned to a specific evaluator with full details
 async function getEvaluatorCasesWithDetails(evaluatorId: string): Promise<CasesResponse> {
   try {
-    console.time('fetchEvaluatorCases');
-    // Get cases assigned to this evaluator with all related data
     const response = await instance.get(`users/${evaluatorId}/cases_with_details/`);
-    console.timeEnd('fetchEvaluatorCases');
-    
-    console.log('Evaluator cases data:', response.data);
-
-    // Transform the response to match our interface if needed
     const casesData = response.data;
     
-    // If the response is already in the correct format, return it directly
     if (casesData.cases && Array.isArray(casesData.cases)) {
       return casesData as CasesResponse;
     }
 
-    // If we need to transform the data
     return {
       cases: (casesData.cases || []).map((caseItem: any) => ({
         id: caseItem.id,
@@ -234,28 +216,21 @@ async function getRecords(id: string): Promise<{ data: Record[] }> {
     const urlParams = new URLSearchParams(window.location.search);
     const doctorId = urlParams.get('doctorId');
     const isCaseId = !doctorId || id !== doctorId;
-
-    console.log('Fetching records:', isCaseId ? `case ${id}` : `doctor ${id}`);
     
     if (isCaseId) {
-      console.time('fetchData');
-      // Use a single optimized endpoint that returns all necessary data
       const response = await instance.get(`cases/${id}/full_details/`, {
         params: {
-          evaluator_id: doctorId // Pass the evaluator ID to get relevant assignments
+          evaluator_id: doctorId
         }
       });
-      console.timeEnd('fetchData');
 
       const data = response.data;
-      console.log('Full case data fetched:', data);
 
       if (!data || !data.imageUrl) {
         console.error('Invalid case data structure:', data);
         throw new Error('Invalid case data structure received from server');
       }
 
-      // Transform the case into a Record
       const recordData: Record = {
         id: data.id,
         imageUrl: data.imageUrl,
@@ -304,17 +279,12 @@ async function getRecords(id: string): Promise<{ data: Record[] }> {
         navigation: data.navigation || undefined
       };
 
-      console.log('Transformed record data:', recordData);
       return { data: [recordData] };
     } else {
-      // Get cases assigned to this evaluator
       const casesResponse = await instance.get(`users/${id}/cases/`);
       const casesData = casesResponse.data;
-      console.log('Cases data fetched:', casesData.length, 'cases');
       
-      // Transform the cases into Records
       const records: Record[] = casesData.map((caseItem: any) => {
-        // Create the record object with safe fallbacks
         const recordData: Record = {
           id: caseItem.id,
           imageUrl: caseItem.image_url,
@@ -394,9 +364,6 @@ interface BatchSubmissionData {
 
 async function setRecords(submissionData: BatchSubmissionData) {
   try {
-    console.log("Submitting evaluations:", submissionData);
-    
-    // Submit the batch evaluation
     const response = await instance.post('evaluations/submit', submissionData);
     
     if (response.data.success) {
@@ -406,7 +373,6 @@ async function setRecords(submissionData: BatchSubmissionData) {
       };
     }
     
-    // If we get here, something went wrong
     return {
       success: false,
       partial: true,
@@ -414,7 +380,6 @@ async function setRecords(submissionData: BatchSubmissionData) {
       errors: response.data.errors || []
     };
   } catch (error) {
-    // Enhanced error logging
     if (error.response?.data) {
       console.error('Error setting records. Response data:', JSON.stringify(error.response.data, null, 2));
       
@@ -432,14 +397,10 @@ async function setRecords(submissionData: BatchSubmissionData) {
 // Get all metrics defined in the system
 async function getMetrics(): Promise<any[]> {
   try {
-    console.log('Calling metrics API endpoint');
     const response = await instance.get('metrics/');
-    console.log('Metrics API response:', response.status, response.data);
     
-    // Check if response data is valid
     if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
       console.warn('Metrics API returned empty or invalid data, providing fallback metrics');
-      // Provide fallback metrics to ensure UI doesn't get stuck
       return [
         { id: '1', name: 'Accuracy' },
         { id: '2', name: 'Completeness' },
@@ -450,7 +411,6 @@ async function getMetrics(): Promise<any[]> {
     return response.data;
   } catch (error) {
     console.error('Error fetching metrics:', error);
-    // Provide fallback metrics to ensure UI doesn't get stuck
     console.warn('Using fallback metrics due to API error');
     return [
       { id: '1', name: 'Accuracy' },

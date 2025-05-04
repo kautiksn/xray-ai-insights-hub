@@ -29,56 +29,35 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
   evaluation: {},
   setEvaluation: (idx, payload) =>
     set((state) => {
-      console.log('Store setEvaluation called with:', { idx, payload });
-      console.log('Current state:', state.evaluation[idx]);
-      
-      const newState = { ...state }
-      const newEvaluation = { ...newState.evaluation }
-      const targetEvaluation = newEvaluation[idx]
-      
-      // Guard against targetEvaluation being undefined
-      if (!targetEvaluation) {
+      if (!state.evaluation[idx]) {
         console.error(`Evaluation data for id ${idx} not found`);
         return state;
       }
-      
-      const target = targetEvaluation.map(model => ({ ...model }))
 
-      const targetModelIndex = target.findIndex(
-        (x) => x.responseId === payload.responseId
-      )
-      
-      // Guard against model not found
-      if (targetModelIndex === -1) {
+      const newEvaluation = { ...state.evaluation };
+      const modelIndex = newEvaluation[idx].findIndex(
+        (model) => model.responseId === payload.responseId
+      );
+
+      if (modelIndex === -1) {
         console.error(`Response ${payload.responseId} not found in evaluation`);
         return state;
       }
 
-      const targetMetricIndex = target[targetModelIndex].metrics.findIndex(
-        (x) => x.id === payload.metricId
-      )
-      
-      // Guard against metric not found
-      if (targetMetricIndex === -1) {
+      const metricIndex = newEvaluation[idx][modelIndex].metrics.findIndex(
+        (metric) => metric.id === payload.metricId
+      );
+
+      if (metricIndex === -1) {
         console.error(`Metric ${payload.metricId} not found in model ${payload.responseId}`);
         return state;
       }
-      
-      // Create new metrics array with updated value
-      target[targetModelIndex].metrics = target[targetModelIndex].metrics.map(
-        (metric, index) => index === targetMetricIndex 
-          ? { ...metric, value: payload.value }
-          : metric
-      )
 
-      newEvaluation[idx] = target
-      
-      console.log('Updated state:', newEvaluation[idx]);
-      
+      newEvaluation[idx][modelIndex].metrics[metricIndex].value = payload.value;
+
       return {
-        ...newState,
-        evaluation: newEvaluation
-      }
+        evaluation: newEvaluation,
+      };
     }),
   init: (initData) =>
     set(() => ({

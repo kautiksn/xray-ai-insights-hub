@@ -85,7 +85,6 @@ export const EvaluationMetrics: React.FC<EvaluationMetricsProps> = ({
 
   // Function to update individual evaluation
   const updateEvaluation = async (responseId: string, metricId: string, value: number | null) => {
-    console.log('Updating evaluation:', { responseId, metricId, value });
     if (value !== null && (value < 1 || value > 5)) {
       console.error('Invalid score value:', value);
       return;
@@ -98,7 +97,6 @@ export const EvaluationMetrics: React.FC<EvaluationMetricsProps> = ({
         responseId,
         value,
       });
-      console.log('State updated with value:', value);
 
       // Get evaluatorId from URL params or context
       const urlParams = new URLSearchParams(window.location.search);
@@ -128,7 +126,6 @@ export const EvaluationMetrics: React.FC<EvaluationMetricsProps> = ({
       }
 
       const data = await response.json();
-      console.log('API response:', data);
       onStatusChange?.(data.status);
 
     } catch (error) {
