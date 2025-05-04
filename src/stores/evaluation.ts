@@ -1,4 +1,4 @@
-import { Evaluation } from '@/types/Evaluation'
+import { Evaluation } from '@/types'
 import { create } from 'zustand'
 
 type LocalEvaluation = {
@@ -12,7 +12,7 @@ type EvaluationStore = {
     payload: {
       responseId: string
       metricId: string
-      value: number
+      value: number | null
     }
   ) => void
   init: (payload: LocalEvaluation) => void
@@ -29,6 +29,9 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
   evaluation: {},
   setEvaluation: (idx, payload) =>
     set((state) => {
+      console.log('Store setEvaluation called with:', { idx, payload });
+      console.log('Current state:', state.evaluation[idx]);
+      
       const newState = { ...state }
       const newEvaluation = { ...newState.evaluation }
       const targetEvaluation = newEvaluation[idx]
@@ -39,7 +42,7 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
         return state;
       }
       
-      const target = [...targetEvaluation]
+      const target = targetEvaluation.map(model => ({ ...model }))
 
       const targetModelIndex = target.findIndex(
         (x) => x.responseId === payload.responseId
@@ -50,10 +53,8 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
         console.error(`Response ${payload.responseId} not found in evaluation`);
         return state;
       }
-      
-      const targetModel = { ...target[targetModelIndex] }
 
-      const targetMetricIndex = targetModel.metrics.findIndex(
+      const targetMetricIndex = target[targetModelIndex].metrics.findIndex(
         (x) => x.id === payload.metricId
       )
       
@@ -63,42 +64,50 @@ const useEvalutationStore = create<EvaluationStore>()((set) => ({
         return state;
       }
       
-      const newMetrics = [...targetModel.metrics]
-      const targetMetric = newMetrics[targetMetricIndex]
+      // Create new metrics array with updated value
+      target[targetModelIndex].metrics = target[targetModelIndex].metrics.map(
+        (metric, index) => index === targetMetricIndex 
+          ? { ...metric, value: payload.value }
+          : metric
+      )
 
-      newMetrics[targetMetricIndex] = {
-        ...targetMetric,
-        value: payload.value,
-      }
-
-      targetModel.metrics = [...newMetrics]
-      target[targetModelIndex] = { ...targetModel }
-      newEvaluation[idx] = [...target]
-
+      newEvaluation[idx] = target
+      
+      console.log('Updated state:', newEvaluation[idx]);
+      
       return {
         ...newState,
-        evaluation: { ...newEvaluation },
+        evaluation: newEvaluation
       }
     }),
   init: (initData) =>
-    set((state) => ({
+    set(() => ({
       evaluation: initData,
-      ...state,
+      doneForId: {}
     })),
   initAtId: (idx, payload) =>
     set((state) => {
       console.log(`Initializing evaluations for ${idx} with:`, payload);
-      const newState = { ...state }
-      newState.evaluation[idx] = [...payload]
-      return newState
+      return {
+        ...state,
+        evaluation: {
+          ...state.evaluation,
+          [idx]: payload.map(model => ({
+            ...model,
+            metrics: model.metrics.map(metric => ({ ...metric }))
+          }))
+        }
+      }
     }),
   doneForId: {},
   setDoneForId: (idx, status) =>
-    set((state) => {
-      const newState = { ...state }
-      newState.doneForId[idx] = status
-      return newState
-    }),
+    set((state) => ({
+      ...state,
+      doneForId: {
+        ...state.doneForId,
+        [idx]: status
+      }
+    })),
   resetDoneStatus: () =>
     set((state) => ({
       ...state,

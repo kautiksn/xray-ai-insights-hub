@@ -100,13 +100,13 @@ function IndexWrapper() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {doctorInfo && (
+      {/* {doctorInfo && (
         <div className="bg-medical-dark-gray/50 p-3 text-center text-white">
           <p className="text-lg">
             Current Evaluator: <span className="font-bold">{doctorInfo.name}</span>
           </p>
         </div>
-      )}
+      )} */}
       <Index records={records} />
     </div>
   )

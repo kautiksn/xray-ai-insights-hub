@@ -4,11 +4,13 @@ import { ImageViewer } from '@/components/ImageViewer'
 import { ReportPanel } from '@/components/ReportPanel'
 import { EvaluationMetrics } from '@/components/EvaluationMetrics'
 import { addEmptyMetrics, shuffle } from '@/lib/utils'
-import { Record } from '@/types'
+import { Record, Metric } from '@/types'
 import useEvalutationStore from '@/stores/evaluation'
 import { Button } from '@/components/ui/button'
 import { setRecords, getMetrics } from '@/services'
 import { useToast } from '@/hooks/use-toast'
+import { getUserDetails } from '@/services'
+import { useNavigate } from 'react-router-dom'
 
 interface Props {
   records: Record[]
@@ -18,8 +20,9 @@ const Index = (props: Props) => {
   const { records } = props
   const [isSubmitting, setIsSubmitting] = useState(false)
   const { toast } = useToast()
-  const [metrics, setMetrics] = useState([
-    { label: 'Loading...', id: '0' }
+  const [doctorName, setDoctorName] = useState<string>('')
+  const [metrics, setMetrics] = useState<Metric[]>([
+    { id: '0', name: 'Loading...', description: 'Loading metrics...' }
   ])
 
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
@@ -27,18 +30,19 @@ const Index = (props: Props) => {
   const doneForId = useEvalutationStore((state) => state.doneForId)
   const setDoneForId = useEvalutationStore((state) => state.setDoneForId)
   const resetDoneStatus = useEvalutationStore((state) => state.resetDoneStatus)
+  const navigate = useNavigate()
 
   useEffect(() => {
     // Reset all evaluation data on initial load to ensure clean state
     console.log("Reset evaluation data on initial load");
-    resetDoneStatus();
     
-    // Check if we need to force a complete reset
+    // Check if we need to force a reset
     const urlParams = new URLSearchParams(window.location.search);
-    const forceReset = urlParams.get('force') === 'true' || true; // Always force reset for now
+    const forceReset = urlParams.get('force') === 'true';
     
     if (forceReset) {
       console.log("Forcing complete reset of evaluation store");
+      resetDoneStatus();
       // Clear any evaluation data directly in the store
       useEvalutationStore.setState({
         evaluation: {},
@@ -74,9 +78,10 @@ const Index = (props: Props) => {
         }
         
         // Transform backend metrics to the format expected by the component
-        const formattedMetrics = metricsData.map(metric => ({
-          label: metric.name,
-          id: metric.id
+        const formattedMetrics: Metric[] = metricsData.map(metric => ({
+          id: metric.id,
+          name: metric.name,
+          description: metric.description || ''
         }));
         
         console.log("Setting formatted metrics:", formattedMetrics);
@@ -96,9 +101,25 @@ const Index = (props: Props) => {
     fetchMetrics();
   }, [toast]);
 
-  const handleImageChange = (newIndex: number) => {
-    setCurrentImageIndex(newIndex)
-  }
+  // Fetch doctor name on component mount
+  useEffect(() => {
+    const fetchDoctorName = async () => {
+      try {
+        const urlParams = new URLSearchParams(window.location.search)
+        const doctorId = urlParams.get('doctorId')
+        
+        if (doctorId) {
+          const doctorDetails = await getUserDetails(doctorId)
+          setDoctorName(doctorDetails.name || 'Unknown Doctor')
+        }
+      } catch (error) {
+        console.error('Error fetching doctor name:', error)
+        setDoctorName('Unknown Doctor')
+      }
+    }
+    
+    fetchDoctorName()
+  }, [])
 
   // Ensure records are loaded before trying to access them
   if (!records || records.length === 0) {
@@ -118,17 +139,14 @@ const Index = (props: Props) => {
   const modelReports = activeRecord ? shuffle([...activeRecord.modelOutputs]) : []
   console.log("Model reports:", modelReports.length);
   
-  // Get navigation data if available
-  const navigation = activeRecord.navigation || null;
-
   console.log("Current metrics state:", metrics);
   console.log("Current active record evaluations:", activeRecord ? activeRecord.evaluations : "none");
   
   const modelScores = activeRecord ? activeRecord.evaluations.map(evaluation => ({
     responseId: evaluation.responseId,
     metrics: [{
-      id: evaluation.metric,
-      label: metrics.find(m => m.id === evaluation.metric)?.label || '',
+      id: evaluation.metricId,
+      name: metrics.find(m => m.id === evaluation.metricId)?.name || '',
       value: evaluation.score
     }]
   })) : [];
@@ -137,184 +155,163 @@ const Index = (props: Props) => {
 
   // Initialize evaluations when metrics are loaded for the current record
   useEffect(() => {
-    if (metrics.length > 0 && metrics[0].id !== '0' && activeRecord?.id) {
-      console.log("Initializing evaluation data for record:", activeRecord.id);
-      
+    if (!activeRecord?.id || !activeRecord.modelOutputs || !metrics.length || metrics[0].id === '0') {
+      return;
+    }
+
+    console.log("Starting evaluation initialization for record:", activeRecord.id);
+    
+    const initializeEvaluations = async () => {
       try {
-        // Set a flag in the UI to show initialization is happening
         setIsSubmitting(true);
         
-        // Always create default scores regardless of existing data
+        // First fetch existing evaluations for this case
+        const response = await fetch(`/api/cases/${activeRecord.id}/evaluations`);
+        let existingEvaluations = [];
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log("Fetched existing evaluations:", data);
+          existingEvaluations = data || [];
+        } else {
+          console.warn("Failed to fetch existing evaluations, using empty array");
+        }
+        
+        // Map the evaluations to the correct format
         const defaultScores = activeRecord.modelOutputs.map(output => {
-          // Find any existing evaluations for this model
-          const existingModelEval = activeRecord.evaluations.find(
-            evaluation => evaluation.responseId === output.responseId
+          // Find existing evaluations for this model output
+          const modelEvaluations = existingEvaluations.filter(
+            evaluation => evaluation.model_response === output.responseId
           );
           
           return {
             responseId: output.responseId,
             metrics: metrics.map(metric => {
-              // Check if we have an existing value for this metric
-              const existingValue = existingModelEval?.metric === metric.id ? existingModelEval.score : 0;
+              // Find existing evaluation for this metric
+              const existingValue = modelEvaluations.find(
+                evaluation => evaluation.metric === metric.id
+              )?.score || null;
               
               return {
                 id: metric.id,
-                label: metric.label,
+                name: metric.name,
+                description: metric.description,
                 value: existingValue
               };
             })
           };
         });
         
-        console.log("Created default scores for initialization:", defaultScores);
-        
-        // Always use default scores to ensure initialization works
+        console.log("Initializing with scores:", defaultScores);
         initId(activeRecord.id, defaultScores);
         
-        // Don't mark as done automatically to allow editing
-        // Only the submit action should mark records as done
-        
-        // Set initialization complete
-        setIsSubmitting(false);
-        
-        // Debug check if initialization worked
-        setTimeout(() => {
-          const state = useEvalutationStore.getState();
-          console.log("After initialization, store state:", state.evaluation);
-          
-          // Add more detailed debug information
-          console.log("Evaluation store complete state:", state);
-          console.log("Evaluation for current record:", state.evaluation[activeRecord.id]);
-          
-          // If store still doesn't have the evaluation data, try one more time
-          if (!state.evaluation[activeRecord.id]) {
-            console.warn("Evaluation data not found in store after initialization, retrying with force");
-            
-            // Try a direct state update approach as backup
-            useEvalutationStore.setState(state => {
-              const newState = { ...state };
-              newState.evaluation[activeRecord.id] = defaultScores;
-              // Don't mark as done to allow editing
-              return newState;
-            });
-          }
-        }, 200);
       } catch (error) {
         console.error("Error initializing evaluation data:", error);
+        toast({
+          title: "Error",
+          description: "Failed to initialize evaluation data. Please refresh the page.",
+          variant: "destructive",
+        });
+      } finally {
         setIsSubmitting(false);
       }
-    } else {
-      console.log("Not initializing evaluation data. Conditions:", {
-        "metrics.length > 0": metrics.length > 0,
-        "metrics[0].id !== '0'": metrics[0]?.id !== '0',
-        "activeRecord?.id": activeRecord?.id
-      });
-    }
-  }, [metrics, activeRecord, initId, setDoneForId]);
+    };
+
+    initializeEvaluations();
+  }, [metrics, activeRecord?.id, activeRecord?.modelOutputs, initId, toast]);
 
   const handleSubmit = async () => {
     if (!activeRecord?.id) return;
     
     setIsSubmitting(true);
     try {
-      const result = await setRecords(activeRecord.id);
+      // Get evaluatorId from URL params
+      const urlParams = new URLSearchParams(window.location.search);
+      const evaluatorId = urlParams.get('doctorId');
+
+      // Get current evaluations from the store
+      const currentEvaluations = useEvalutationStore.getState().evaluation[activeRecord.id];
       
-      if (result.partial) {
-        // Some evaluations were successful, but some failed
+      if (!currentEvaluations) {
+        throw new Error('No evaluations found for submission');
+      }
+
+      // Format data according to API contract
+      const evaluations = currentEvaluations.flatMap(evaluation => 
+        evaluation.metrics.map(metric => ({
+          caseId: activeRecord.id,
+          responseId: evaluation.responseId,
+          metricId: metric.id,
+          evaluatorId,
+          score: metric.value
+        }))
+      ).filter(evaluation => evaluation.score !== null && evaluation.score > 0);
+
+      // Validate scores before submission
+      const hasInvalidScores = evaluations.some(
+        evaluation => !evaluation.score || evaluation.score < 1 || evaluation.score > 5
+      );
+
+      if (hasInvalidScores) {
+        toast({
+          title: "Validation Error",
+          description: "Please ensure all metrics have valid scores (1-5)",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Submit each evaluation
+      const results = await Promise.all(
+        evaluations.map(evaluation =>
+          fetch('/api/cases/evaluations/update/', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(evaluation),
+          })
+        )
+      );
+
+      // Check if any submissions failed
+      const failedSubmissions = results.filter(r => !r.ok).length;
+      
+      if (failedSubmissions > 0) {
         toast({
           title: "Partial Success",
-          description: result.message || "Some evaluations were submitted successfully, but others failed.",
+          description: `${results.length - failedSubmissions} evaluations submitted successfully, ${failedSubmissions} failed.`,
           variant: "default",
         });
-        
-        // If we have specific errors, display them in a more detailed way
-        if (result.errors && result.errors.length > 0) {
-          // Show only first 3 errors to avoid UI clutter
-          const displayErrors = result.errors.slice(0, 3);
-          
-          displayErrors.forEach(error => {
-            toast({
-              title: "Error Details",
-              description: error,
-              variant: "destructive",
-            });
-          });
-          
-          // If there are more errors, show a count
-          if (result.errors.length > 3) {
-            toast({
-              title: "Additional Errors",
-              description: `${result.errors.length - 3} more errors occurred. Check console for details.`,
-              variant: "destructive",
-            });
-          }
-        }
       } else {
-        // All evaluations were successful
         toast({
           title: "Success",
           description: "All evaluations submitted successfully",
         });
         
-        // After successful submission, reset the evaluation store to clear data
-        resetDoneStatus();
+        // Mark this record as done but don't reset the evaluations
+        setDoneForId(activeRecord.id, true);
       }
     } catch (error) {
       console.error("Error submitting evaluations:", error);
-      
-      // Extract error message if available
-      let errorMessage = "Failed to submit evaluations. Please try again.";
-      let detailedMessage = "";
-      
-      if (typeof error === 'string') {
-        errorMessage = error;
-      } else if (error.message) {
-        errorMessage = error.message;
-        
-        // Check if the error message contains unique constraint violation
-        if (errorMessage.includes("unique set") || errorMessage.includes("case_assignment") || errorMessage.includes("model_response")) {
-          detailedMessage = "It appears you may have already submitted evaluations for this case. Please try refreshing the page.";
-        }
-      } else if (error.response?.data) {
-        const errorData = error.response.data;
-        
-        // Check for non-field errors (Django REST Framework format)
-        if (errorData.non_field_errors && errorData.non_field_errors.length > 0) {
-          errorMessage = `API Error: ${errorData.non_field_errors[0]}`;
-          
-          // Check for unique constraint error
-          if (errorData.non_field_errors[0].includes("unique set")) {
-            detailedMessage = "It appears you may have already submitted evaluations for this case. Please try refreshing the page.";
-          }
-        } 
-        // Check for field-specific errors
-        else if (typeof errorData === 'object') {
-          const firstErrorField = Object.keys(errorData)[0];
-          if (firstErrorField && errorData[firstErrorField].length > 0) {
-            errorMessage = `Error with ${firstErrorField}: ${errorData[firstErrorField][0]}`;
-          }
-        }
-      }
-      
-      // Show the main error message
       toast({
         title: "Error",
-        description: errorMessage,
+        description: "Failed to submit evaluations. Please try again.",
         variant: "destructive",
       });
-      
-      // If we have a detailed message, show it as a follow-up toast
-      if (detailedMessage) {
-        setTimeout(() => {
-          toast({
-            title: "Recommendation",
-            description: detailedMessage,
-            variant: "default",
-          });
-        }, 500);
-      }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleBackClick = () => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const doctorId = urlParams.get('doctorId')
+    if (doctorId) {
+      navigate(`/doctor/${doctorId}`)
+    } else {
+      // Fallback to home if no doctorId
+      navigate('/')
     }
   }
 
@@ -323,17 +320,22 @@ const Index = (props: Props) => {
   return (
     <div className="h-screen flex flex-col bg-medical-darkest-gray text-foreground overflow-hidden">
       <header className="bg-medical-darker-gray px-8 py-3 border-b border-medical-dark-gray/30 flex justify-between items-center">
-        <h1 className="text-xl font-bold text-medical-blue flex items-center">
-          <Settings className="mr-2" size={20} />
-          X-Ray AI Insights Hub
-        </h1>
         <div className="flex items-center">
-          <span className="font-medium text-sm mr-2">
-            Current Evaluator:
-          </span>
-          <span className="font-medium">
-            Dr. John Smith
-          </span>
+          <button 
+            onClick={handleBackClick} 
+            className="mr-4 hover:text-medical-blue transition-colors"
+          >
+            ← Back to Cases
+          </button>
+          <h1 className="text-xl font-bold text-medical-blue flex items-center">
+            <Settings className="mr-2" size={20} />
+            X-Ray AI Insights Hub
+          </h1>
+        </div>
+        <div className="flex items-center">
+          <p className="text-sm text-medical-gray">
+            Doctor: {doctorName}
+          </p>
         </div>
       </header>
 
@@ -342,10 +344,9 @@ const Index = (props: Props) => {
           <div className="w-2/5">
             <ImageViewer
               currentImage={activeRecord.imageUrl}
-              currentIndex={currentImageIndex}
-              onChangeImage={handleImageChange}
-              totalImages={records.length}
-              navigation={navigation}
+              currentIndex={0}
+              totalImages={1}
+              onChangeImage={() => {}}
             />
           </div>
 
@@ -364,7 +365,7 @@ const Index = (props: Props) => {
           </div>
         </div>
 
-        <div className="flex-1 min-h-[calc(35vh-6rem)]">
+        <div className="flex-1 min-h-[calc(35vh-6rem)] flex flex-col">
           <EvaluationMetrics
             activeRecordId={activeRecord.id || ''}
             metrics={metrics}
@@ -375,21 +376,17 @@ const Index = (props: Props) => {
               response: report
             }))}
           />
-        </div>
-
-        <div className="flex justify-center flex-col pt-2">
-          <p className="text-center text-sm text-gray-400 py-2">
-            Note: This submits all records. Please use this once you are done
-            with all records.
-          </p>
-          <Button 
-            onClick={handleSubmit} 
-            disabled={isSubmitting || metrics[0].id === '0' || !activeRecord?.id}
-            className="bg-medical-blue hover:bg-medical-blue/90"
-          >
-            {isSubmitting ? "Submitting..." : 
-             metrics[0].id === '0' ? "Loading Metrics..." : "Submit"}
-          </Button>
+          
+          <div className="mt-4 flex justify-center">
+            <Button 
+              onClick={handleSubmit} 
+              disabled={isSubmitting || metrics[0].id === '0' || !activeRecord?.id}
+              className="bg-medical-blue hover:bg-medical-blue/90"
+            >
+              {isSubmitting ? "Submitting..." : 
+               metrics[0].id === '0' ? "Loading Metrics..." : "Submit"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

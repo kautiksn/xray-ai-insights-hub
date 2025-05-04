@@ -165,25 +165,27 @@ function DoctorCases() {
           
           {casesData?.cases && casesData.cases.length > 0 && (
             <div className="space-y-4">
-              {casesData.cases.map((caseItem) => (
+              {casesData.cases.map((caseItem, index) => (
                 <div
                   key={caseItem.id}
-                  className="p-4 border rounded-lg cursor-pointer hover:bg-gray-100 transition-colors"
+                  className="p-4 border rounded-lg cursor-pointer hover:bg-medical-darker-gray transition-colors group"
                   onClick={() => navigateToCase(caseItem.id)}
                 >
                   <div className="flex justify-between items-center">
                     <div>
-                      <div className="font-medium">Case ID: {caseItem.image_id}</div>
-                      <div className="text-sm text-muted-foreground mt-1">
+                      <div className="font-medium group-hover:text-white">
+                        Case {index + 1}: {caseItem.image_id}
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-1 group-hover:text-white/70">
                         Progress: {caseItem.completed_evaluations} of {caseItem.total_evaluations} evaluations completed
                       </div>
                     </div>
                     <div className={`px-3 py-1 rounded-full text-sm ${
                       caseItem.status === 'completed' 
-                        ? 'bg-green-100 text-green-800'
+                        ? 'bg-green-100 text-green-800 group-hover:bg-green-200'
                         : caseItem.status === 'in_progress'
-                        ? 'bg-blue-100 text-blue-800'
-                        : 'bg-gray-100 text-gray-800'
+                        ? 'bg-blue-100 text-blue-800 group-hover:bg-blue-200'
+                        : 'bg-gray-100 text-gray-800 group-hover:bg-gray-200'
                     }`}>
                       {caseItem.status.replace('_', ' ')}
                     </div>

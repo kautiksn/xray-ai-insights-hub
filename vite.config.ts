@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       // Proxy all /api requests to the Django backend
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'https://medical-backend-1056714537361.us-central1.run.app',
         changeOrigin: true,
         secure: false,
       }

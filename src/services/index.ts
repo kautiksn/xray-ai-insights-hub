@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { Record } from '../types/Record'
+import { Record, Metric } from '@/types'
 import useEvalutationStore from '@/stores/evaluation'
 
 const instance = axios.create({
@@ -58,11 +58,45 @@ async function testBackendConnection(): Promise<boolean> {
   }
 }
 
+interface ApiResponse<T> {
+  data: T
+  status: number
+  message?: string
+}
+
+interface UserDetails {
+  id: string
+  name: string
+  email: string
+  role: string
+}
+
+interface EvaluationData {
+  id: string
+  case_assignment: string
+  model_response: string
+  metric: string
+  score: number
+  created_at: string
+}
+
+interface ModelResponse {
+  id: string
+  model: string
+  name: string
+  response: string
+}
+
+interface CaseAssignment {
+  id: string
+  case: string
+  evaluator: string
+}
+
 // Get user details and role
-async function getUserDetails(userId: string): Promise<{ id: string, name: string, email: string, role: string }> {
+async function getUserDetails(userId: string): Promise<UserDetails> {
   try {
-    // Get specific user by ID
-    const response = await instance.get(`users/${userId}`);
+    const response = await instance.get(`users/${userId}/`);
     return response.data;
   } catch (error) {
     console.error('Error fetching user details:', error);
@@ -94,57 +128,13 @@ async function getAllEvaluators(): Promise<any[]> {
 }
 
 // Get all evaluations (for supervisors) with optional filtering
-async function getAllEvaluations(evaluatorId?: string, raw: boolean = true): Promise<any[]> {
+async function getAllEvaluations(evaluatorId?: string, raw = true): Promise<EvaluationData[]> {
   try {
-    const url = evaluatorId ? `evaluations/?evaluator_id=${evaluatorId}` : 'evaluations/';
-    console.log(`Fetching evaluations from URL: ${url}`);
-    const response = await instance.get(url);
-    
-    // Log the raw evaluation data
-    console.log('Raw evaluation data from API:', response.data);
-    
-    // If data is empty, return empty array
-    if (!response.data || !Array.isArray(response.data) || response.data.length === 0) {
-      console.warn('No evaluations returned from API, returning empty array');
-      return [];
-    }
-    
-    // If raw is true, just return the raw data (for SupervisorDashboard to handle directly)
-    if (raw) {
-      return response.data;
-    }
-    
-    // Map the data to ensure consistent structure, this helps debugging the "Unknown" issue
-    const mappedData = response.data.map((evaluation: any) => {
-      // Check for missing required fields and log warnings
-      if (!evaluation.case_assignment) {
-        console.warn('Evaluation missing case_assignment:', evaluation);
-      }
-      
-      if (!evaluation.model_response) {
-        console.warn('Evaluation missing model_response:', evaluation);
-      }
-      
-      if (!evaluation.metric) {
-        console.warn('Evaluation missing metric:', evaluation);
-      }
-      
-      // Return with proper field mapping
-      return {
-        ...evaluation,
-        case_assignment: evaluation.case_assignment || 'unknown-assignment',
-        model_response: evaluation.model_response || 'unknown-model-response',
-        metric: evaluation.metric || 'unknown-metric'
-      };
-    });
-    
-    console.log('Mapped evaluation data for frontend:', mappedData);
-    return mappedData;
+    const response = await instance.get(`evaluations/${evaluatorId ? `?evaluator=${evaluatorId}` : ''}`);
+    return response.data;
   } catch (error) {
     console.error('Error fetching evaluations:', error);
-    // Return empty array instead of throwing to make the UI more resilient
-    console.warn('Returning empty array due to error fetching evaluations');
-    return [];
+    throw error;
   }
 }
 
@@ -260,44 +250,58 @@ async function getRecords(id: string): Promise<{ data: Record[] }> {
       const data = response.data;
       console.log('Full case data fetched:', data);
 
-      if (!data || !data.case || !data.case.image_url) {
+      if (!data || !data.imageUrl) {
         console.error('Invalid case data structure:', data);
         throw new Error('Invalid case data structure received from server');
       }
 
-      // Parse ground truth from JSON string
-      let groundTruth = { findings: '', impressions: '' };
-      try {
-        if (data.case.ground_truth) {
-          const parsedGroundTruth = JSON.parse(data.case.ground_truth);
-          groundTruth = {
-            findings: parsedGroundTruth.findings || '',
-            impressions: parsedGroundTruth.impression || ''
-          };
-        }
-      } catch (err) {
-        console.error('Error parsing ground truth:', err);
-      }
-
       // Transform the case into a Record
       const recordData: Record = {
-        id: data.case.id,
-        imageUrl: data.case.image_url,
-        modelOutputs: (data.model_responses || []).map((response: any) => ({
-          responseId: response.id,
-          response: response.response_text || response.response || '' // Handle both response_text and response fields
+        id: data.id,
+        imageUrl: data.imageUrl,
+        image_id: data.imageId,
+        status: data.status,
+        modelOutputs: (data.modelOutputs || []).map((response: any) => ({
+          responseId: response.responseId,
+          response: response.response || '',
+          evaluations: (response.evaluations || []).map((evaluation: any) => ({
+            responseId: evaluation.responseId,
+            metricId: evaluation.metricId,
+            metricName: evaluation.metricName,
+            score: evaluation.score || 0
+          }))
         })),
         metrics: (data.metrics || []).map((metric: any) => ({
           id: metric.id,
-          label: metric.name,
+          name: metric.name,
+          description: metric.description
         })),
-        evaluations: (data.model_responses || []).map((response: any) => ({
-          responseId: response.id,
-          metric: response.metric || '',
-          score: response.score || 0,
+        evaluations: (data.evaluations || []).map((evaluation: any) => ({
+          responseId: evaluation.responseId,
+          metricId: evaluation.metricId,
+          metricName: evaluation.metricName,
+          score: evaluation.score || 0
         })),
-        groundTruth,
-        models: []
+        groundTruth: (() => {
+          try {
+            if (typeof data.groundTruth === 'string') {
+              const parsed = JSON.parse(data.groundTruth);
+              return {
+                findings: parsed.findings || '',
+                impressions: parsed.impression || ''
+              };
+            }
+            return {
+              findings: data.groundTruth?.findings || '',
+              impressions: data.groundTruth?.impression || ''
+            };
+          } catch (err) {
+            console.error('Error parsing ground truth:', err);
+            return { findings: '', impressions: '' };
+          }
+        })(),
+        models: [],
+        navigation: data.navigation || undefined
       };
 
       console.log('Transformed record data:', recordData);
@@ -310,39 +314,53 @@ async function getRecords(id: string): Promise<{ data: Record[] }> {
       
       // Transform the cases into Records
       const records: Record[] = casesData.map((caseItem: any) => {
-        // Parse the ground truth JSON if it exists
-        let groundTruth = { findings: '', impressions: '' };
-        try {
-          if (caseItem.ground_truth) {
-            const parsedGroundTruth = JSON.parse(caseItem.ground_truth);
-            groundTruth = {
-              findings: parsedGroundTruth.findings || '',
-              impressions: parsedGroundTruth.impression || ''
-            };
-          }
-        } catch (err) {
-          console.error('Error parsing ground truth:', err);
-        }
-        
         // Create the record object with safe fallbacks
         const recordData: Record = {
           id: caseItem.id,
           imageUrl: caseItem.image_url,
-          modelOutputs: (caseItem.model_responses || []).map((response: any) => ({
-            responseId: response.id,
-            response: response.response_text || response.response || '' // Handle both response_text and response fields
+          image_id: caseItem.image_id,
+          status: caseItem.status,
+          modelOutputs: (caseItem.modelOutputs || []).map((response: any) => ({
+            responseId: response.responseId,
+            response: response.response || '',
+            evaluations: (response.evaluations || []).map((evaluation: any) => ({
+              responseId: evaluation.responseId,
+              metricId: evaluation.metricId,
+              metricName: evaluation.metricName,
+              score: evaluation.score || 0
+            }))
           })),
           metrics: (caseItem.metrics || []).map((metric: any) => ({
             id: metric.id,
-            label: metric.name,
+            name: metric.name,
+            description: metric.description
           })),
-          evaluations: (caseItem.model_responses || []).map((response: any) => ({
-            responseId: response.id,
-            metric: response.metric || '',
-            score: response.score || 0,
+          evaluations: (caseItem.evaluations || []).map((evaluation: any) => ({
+            responseId: evaluation.responseId,
+            metricId: evaluation.metricId,
+            metricName: evaluation.metricName,
+            score: evaluation.score || 0
           })),
-          groundTruth,
-          models: []
+          groundTruth: (() => {
+            try {
+              if (typeof caseItem.groundTruth === 'string') {
+                const parsed = JSON.parse(caseItem.groundTruth);
+                return {
+                  findings: parsed.findings || '',
+                  impressions: parsed.impression || ''
+                };
+              }
+              return {
+                findings: caseItem.groundTruth?.findings || '',
+                impressions: caseItem.groundTruth?.impression || ''
+              };
+            } catch (err) {
+              console.error('Error parsing ground truth:', err);
+              return { findings: '', impressions: '' };
+            }
+          })(),
+          models: [],
+          navigation: caseItem.navigation || undefined
         };
         
         return recordData;
@@ -363,176 +381,38 @@ async function getRecords(id: string): Promise<{ data: Record[] }> {
   }
 }
 
-async function setRecords(radId: string) {
+interface BatchSubmissionData {
+  case_id: string;
+  evaluations: {
+    response_id: string;
+    metrics: {
+      metric_id: string;
+      score: number;
+    }[];
+  }[];
+}
+
+async function setRecords(submissionData: BatchSubmissionData) {
   try {
-    const state = useEvalutationStore.getState();
-    console.log("Evaluation store state:", state.evaluation);
+    console.log("Submitting evaluations:", submissionData);
     
-    // Get all case assignments for this case
-    const assignmentsResponse = await instance.get(`case-assignments/?case=${radId}`);
-    console.log("Case assignments response:", assignmentsResponse.data);
+    // Submit the batch evaluation
+    const response = await instance.post('evaluations/submit', submissionData);
     
-    // Log all case assignment IDs for debugging
-    const assignments = assignmentsResponse.data;
-    console.log("Available case assignment IDs:", assignments.map((a: any) => a.id));
-    
-    if (!assignments || assignments.length === 0) {
-      throw new Error('No case assignments found for this case');
-    }
-    
-    // Get case assignment ID - use the first one for now
-    // In a real app, you would filter for the current evaluator
-    const caseAssignmentId = assignments[0].id;
-    console.log("Selected case assignment ID:", caseAssignmentId, "Full assignment:", assignments[0]);
-    
-    // Get case details including model responses
-    const caseResponse = await instance.get(`cases/${radId}/details/`);
-    console.log("Case details response:", caseResponse.data);
-    
-    // Log model responses for debugging
-    const modelResponses = caseResponse.data.model_responses;
-    console.log("Available model responses:", modelResponses.map((r: any) => ({ id: r.id, model: r.model })));
-    
-    // Get existing evaluations for this case assignment to determine if we need to create or update
-    const existingEvaluationsResponse = await fetch(`/api/evaluations/?case_assignment=${caseAssignmentId}`);
-    const existingEvaluations = await existingEvaluationsResponse.json();
-    console.log("Existing evaluations for this case assignment:", existingEvaluations);
-    
-    // Create a lookup map for quick checking if an evaluation already exists
-    const existingEvaluationsMap = {};
-    existingEvaluations.forEach(evaluation => {
-      const key = `${evaluation.case_assignment}-${evaluation.model_response}-${evaluation.metric}`;
-      existingEvaluationsMap[key] = evaluation.id;
-    });
-    
-    // Track successful submissions
-    let successCount = 0;
-    let totalToSubmit = 0;
-    let errors = [];
-    
-    // For each evaluation in the store, submit to the API
-    for (const key of Object.keys(state.evaluation)) {
-      // Only process evaluations for the current record
-      if (key !== radId) {
-        console.log(`Skipping evaluations for ${key} - not the current record (${radId})`);
-        continue;
-      }
-      
-      const evaluations = state.evaluation[key];
-      console.log(`Processing evaluations for key ${key}:`, evaluations);
-      
-      // For each model's evaluations
-      for (const modelEval of evaluations) {
-        const modelId = modelEval.responseId;
-        const modelResponseObject = modelResponses.find((resp: any) => resp.model === modelId);
-        const modelResponseId = modelResponseObject?.id;
-        
-        console.log(`Model ID: ${modelId}, Model Response:`, modelResponseObject);
-        
-        if (!modelResponseId) {
-          console.error(`Model response not found for model ${modelId}`);
-          errors.push(`No model response found for model ${modelId}`);
-          continue;
-        }
-        
-        // For each metric evaluation
-        for (const metricEval of modelEval.metrics) {
-          // Skip metrics with score of 0
-          if (metricEval.value === 0) {
-            console.log(`Skipping metric ${metricEval.id} with score 0`);
-            continue;
-          }
-          
-          totalToSubmit++;
-          
-          // Create evaluation payload - ensure values match expected types
-          const evaluationData = {
-            case_assignment: caseAssignmentId,
-            model_response: modelResponseId,
-            metric: metricEval.id,
-            score: parseInt(metricEval.value.toString(), 10) // Ensure it's an integer
-          };
-          
-          // Check if this evaluation already exists
-          const evaluationKey = `${caseAssignmentId}-${modelResponseId}-${metricEval.id}`;
-          const existingEvaluationId = existingEvaluationsMap[evaluationKey];
-          
-          let url = '/api/evaluations/';
-          let method = 'POST';
-          
-          // If evaluation exists, use PUT to update it instead of creating a new one
-          if (existingEvaluationId) {
-            url = `/api/evaluations/${existingEvaluationId}/`;
-            method = 'PUT';
-            console.log(`Updating existing evaluation (ID: ${existingEvaluationId})`, evaluationData);
-          } else {
-            console.log("Submitting new evaluation payload:", evaluationData);
-          }
-          
-          try {
-            // Submit the evaluation directly to the API
-            const response = await fetch(url, {
-              method: method,
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify(evaluationData)
-            });
-            
-            if (!response.ok) {
-              const errorData = await response.json();
-              throw { response: { data: errorData } };
-            }
-            
-            const data = await response.json();
-            console.log(`Evaluation ${method === 'PUT' ? 'update' : 'submission'} response:`, data);
-            successCount++;
-          } catch (error) {
-            // Log the full error response with details
-            const errorData = error.response?.data || error;
-            
-            // Log detailed error information
-            console.error(
-              "Error submitting evaluation:", 
-              JSON.stringify(errorData, null, 2), 
-              "For payload:", 
-              JSON.stringify(evaluationData, null, 2)
-            );
-            
-            // Specifically log non_field_errors if present
-            if (errorData.non_field_errors) {
-              console.error("Non-field errors:", errorData.non_field_errors);
-              errors.push(errorData.non_field_errors[0]);
-            } else {
-              errors.push("Unknown API error");
-            }
-            
-            // Continue with next evaluation rather than stopping everything
-            continue;
-          }
-        }
-      }
-    }
-    
-    console.log(`Successfully submitted ${successCount} out of ${totalToSubmit} evaluations`);
-    
-    // If we had some errors but also some successes, consider it partially successful
-    if (successCount > 0 && successCount < totalToSubmit) {
-      console.warn("Partial success - some evaluations were submitted successfully");
+    if (response.data.success) {
       return { 
         success: true, 
-        partial: true, 
-        message: "Some evaluations were submitted successfully, but others failed.",
-        errors 
+        partial: false 
       };
     }
     
-    // If everything failed, throw an error
-    if (successCount === 0 && totalToSubmit > 0) {
-      throw new Error(errors.join(", "));
-    }
-    
-    return { success: true, partial: false };
+    // If we get here, something went wrong
+    return {
+      success: false,
+      partial: true,
+      message: response.data.message || "Failed to submit some evaluations",
+      errors: response.data.errors || []
+    };
   } catch (error) {
     // Enhanced error logging
     if (error.response?.data) {

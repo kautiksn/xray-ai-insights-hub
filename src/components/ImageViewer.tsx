@@ -1,8 +1,5 @@
 import React, { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
-  ChevronLeft,
-  ChevronRight,
   ZoomIn,
   ZoomOut,
   Maximize,
@@ -15,51 +12,15 @@ interface ImageViewerProps {
   currentIndex: number
   onChangeImage: (index: number) => void
   totalImages?: number
-  navigation?: {
-    allCaseIds: string[]
-    currentIndex: number
-    hasPrevious: boolean
-    hasNext: boolean
-    previousId: string | null
-    nextId: string | null
-  }
 }
 
 export const ImageViewer: React.FC<ImageViewerProps> = ({
   currentImage,
   currentIndex,
   onChangeImage,
-  totalImages = 20,
-  navigation
+  totalImages = 1,
 }) => {
   const [zoomLevel, setZoomLevel] = useState(1)
-  const navigate = useNavigate()
-
-  const handlePreviousImage = () => {
-    if (navigation && navigation.hasPrevious && navigation.previousId) {
-      // Get the current URL and update only the radId part
-      const url = new URL(window.location.href)
-      const path = url.pathname.split('/')
-      path[path.length - 1] = navigation.previousId
-      url.pathname = path.join('/')
-      navigate(url.pathname + url.search)
-    } else if (currentIndex > 0) {
-      onChangeImage(currentIndex - 1)
-    }
-  }
-
-  const handleNextImage = () => {
-    if (navigation && navigation.hasNext && navigation.nextId) {
-      // Get the current URL and update only the radId part
-      const url = new URL(window.location.href)
-      const path = url.pathname.split('/')
-      path[path.length - 1] = navigation.nextId
-      url.pathname = path.join('/')
-      navigate(url.pathname + url.search)
-    } else if (currentIndex < totalImages - 1) {
-      onChangeImage(currentIndex + 1)
-    }
-  }
 
   const handleZoomIn = () => {
     setZoomLevel((prev) => Math.min(prev + 0.25, 3))
@@ -118,40 +79,10 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         >
           <img
             src={currentImage}
-            alt={`X-ray image ${currentIndex + 1}`}
+            alt="X-ray image"
             className="max-w-full max-h-full object-contain"
           />
         </div>
-      </div>
-
-      <div className="p-3 border-t border-medical-dark-gray/30 flex justify-between items-center">
-        <button
-          onClick={handlePreviousImage}
-          disabled={navigation ? !navigation.hasPrevious : currentIndex === 0}
-          className={cn(
-            'p-1.5 rounded-md nav-button',
-            (navigation ? !navigation.hasPrevious : currentIndex === 0) && 'opacity-50 cursor-not-allowed'
-          )}
-          aria-label="Previous image"
-        >
-          <ChevronLeft size={20} />
-        </button>
-
-        <span className="text-sm text-center">
-          {navigation ? `${navigation.currentIndex + 1} / ${navigation.allCaseIds.length}` : `${currentIndex + 1} / ${totalImages}`}
-        </span>
-
-        <button
-          onClick={handleNextImage}
-          disabled={navigation ? !navigation.hasNext : currentIndex === totalImages - 1}
-          className={cn(
-            'p-1.5 rounded-md nav-button',
-            (navigation ? !navigation.hasNext : currentIndex === totalImages - 1) && 'opacity-50 cursor-not-allowed'
-          )}
-          aria-label="Next image"
-        >
-          <ChevronRight size={20} />
-        </button>
       </div>
     </div>
   )
